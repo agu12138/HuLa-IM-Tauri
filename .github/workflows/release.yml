@@ -46,7 +46,7 @@ jobs:
       - name: Create release
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__ #这个动作会自动将\_\_VERSION\_\_替换为app version
           releaseName: 'v__VERSION__'
