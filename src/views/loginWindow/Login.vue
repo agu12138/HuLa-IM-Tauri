@@ -1,59 +1,63 @@
 <template>
-  <!-- todo 这里设置了 data-tauri-drag-region但是有部分区域不可以拖动 -->
   <!-- 单独使用n-config-provider来包裹不需要主题切换的界面 -->
-  <n-config-provider :theme="lightTheme" data-tauri-drag-region class="login-box size-full rounded-8px select-none">
+  <n-config-provider :theme="naiveTheme" data-tauri-drag-region class="login-box size-full rounded-8px select-none">
     <!--顶部操作栏-->
-    <ActionBar :max-w="false" :shrink="false" />
+    <ActionBar :max-w="false" :shrink="false" proxy />
 
     <!--  手动登录样式  -->
-    <n-flex vertical :size="25" v-if="!isAutoLogin">
+    <n-flex vertical :size="22" v-if="uiState === 'manual'">
       <!-- 头像 -->
-      <n-flex justify="center" class="w-full mt-35px">
-        <img
-          class="w-80px h-80px rounded-50% bg-#fff border-(2px solid #fff)"
-          :src="info.avatar || '/logo.png'"
-          alt="" />
+      <n-flex justify="center" class="w-full pt-12px" data-tauri-drag-region>
+        <n-avatar
+          class="welcome size-80px rounded-50% border-(2px solid #fff) dark:border-(2px solid #606060)"
+          :color="themes.content === ThemeEnum.DARK ? '#282828' : '#fff'"
+          :fallback-src="themes.content === ThemeEnum.DARK ? '/logoL.png' : '/logoD.png'"
+          :src="AvatarUtils.getAvatarUrl(info.avatar)" />
       </n-flex>
 
       <!-- 登录菜单 -->
       <n-flex class="ma text-center h-full w-260px" vertical :size="16">
         <n-input
-          style="padding-left: 20px"
+          :class="{ 'pl-16px': loginHistories.length > 0 }"
           size="large"
-          maxlength="16"
-          minlength="6"
           v-model:value="info.account"
           type="text"
           :placeholder="accountPH"
           @focus="accountPH = ''"
-          @blur="accountPH = '输入HuLa账号'"
+          @blur="accountPH = t('login.input.account.placeholder')"
+          spellCheck="false"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
           clearable>
           <template #suffix>
-            <n-flex @click="arrowStatus = !arrowStatus">
-              <svg v-if="!arrowStatus" class="down w-18px h-18px color-#505050 cursor-pointer">
+            <n-flex v-if="loginHistories.length > 0" @click="arrowStatus = !arrowStatus">
+              <svg v-if="!arrowStatus" class="down w-18px h-18px color-#505050 dark:color-#909090 cursor-pointer">
                 <use href="#down"></use>
               </svg>
-              <svg v-else class="down w-18px h-18px color-#505050 cursor-pointer"><use href="#up"></use></svg>
+              <svg v-else class="down w-18px h-18px color-#505050 dark:color-#909090 cursor-pointer">
+                <use href="#up"></use>
+              </svg>
             </n-flex>
           </template>
         </n-input>
 
-        <!-- 账号选择框 TODO 尝试使用n-popover组件来实现这个功能 (nyh -> 2024-03-09 02:56:06)-->
+        <!-- 账号选择框-->
         <div
           style="border: 1px solid rgba(70, 70, 70, 0.1)"
-          v-if="accountOption.length > 0 && arrowStatus"
-          class="account-box absolute w-260px max-h-140px bg-#fdfdfd mt-45px z-99 rounded-8px p-8px box-border">
+          v-if="loginHistories.length > 0 && arrowStatus"
+          class="account-box absolute w-260px max-h-140px bg-#fdfdfd98 dark:bg-#48484e98 backdrop-blur-sm mt-45px z-99 rounded-8px p-8px box-border">
           <n-scrollbar style="max-height: 120px" trigger="none">
             <n-flex
               vertical
-              v-for="(item, index) in accountOption"
+              v-for="item in loginHistories"
               :key="item.account"
               @click="giveAccount(item)"
-              class="p-8px cursor-pointer hover:bg-#f3f3f3 hover: rounded-6px">
+              class="p-8px cursor-pointer hover:bg-#90909020 dark:hover:bg-#90909030 hover:rounded-6px">
               <div class="flex-between-center">
-                <img :src="item.avatar" class="w-28px h-28px bg-#ccc rounded-50%" alt="" />
-                <p class="text-14px color-#505050">{{ item.account }}</p>
-                <svg @click.stop="delAccount(index)" class="w-12px h-12px">
+                <n-avatar :src="AvatarUtils.getAvatarUrl(item.avatar)" color="#fff" class="size-28px rounded-50%" />
+                <p class="text-14px color-#505050 dark:color-#fefefe">{{ item.account }}</p>
+                <svg @click.stop="delAccount(item)" class="w-12px h-12px dark:color-#fefefe">
                   <use href="#close"></use>
                 </svg>
               </div>
@@ -62,57 +66,69 @@
         </div>
 
         <n-input
+          class="pl-16px"
           maxlength="16"
           minlength="6"
           size="large"
+          show-password-on="click"
           v-model:value="info.password"
           type="password"
+          spellCheck="false"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
           :placeholder="passwordPH"
           @focus="passwordPH = ''"
-          @blur="passwordPH = '输入HuLa密码'"
+          @blur="passwordPH = t('login.input.pass.placeholder')"
           clearable />
 
         <!-- 协议 -->
-        <n-flex justify="center" :size="6">
+        <n-flex align="center" justify="center" :size="6">
           <n-checkbox v-model:checked="protocol" />
-          <div class="text-12px color-#909090 cursor-default lh-14px">
-            <span>已阅读并同意</span>
-            <span class="color-#13987f cursor-pointer">服务协议</span>
-            <span>和</span>
-            <span class="color-#13987f cursor-pointer">HuLa隐私保护指引</span>
+          <div class="text-12px color-#909090 cursor-default lh-14px agreement">
+            <span>{{ t('login.term.checkout.text1') }}</span>
+            <span class="color-#13987f cursor-pointer" @click.stop="openServiceAgreement">
+              {{ t('login.term.checkout.text2') }}
+            </span>
+            <span>{{ t('login.term.checkout.text3') }}</span>
+            <span class="color-#13987f cursor-pointer" @click.stop="openPrivacyAgreement">
+              {{ t('login.term.checkout.text4') }}
+            </span>
           </div>
         </n-flex>
 
         <n-button
           :loading="loading"
           :disabled="loginDisabled"
-          class="w-full mt-8px mb-50px"
-          @click="loginWin"
-          color="#13987f">
-          {{ loginText }}
+          tertiary
+          style="color: #fff"
+          class="gradient-button w-full mt-8px mb-10px"
+          @click="normalLogin('PC', true, false)">
+          <span>{{ loginText }}</span>
         </n-button>
       </n-flex>
     </n-flex>
 
     <!-- 自动登录样式 -->
-    <n-flex vertical :size="29" v-else>
+    <n-flex v-else-if="uiState === 'auto'" vertical :size="29" data-tauri-drag-region>
       <n-flex justify="center" class="mt-15px">
-        <img src="@/assets/logo/hula.png" class="w-140px h-60px" alt="" />
+        <img src="/hula.png" class="w-140px h-60px" alt="" />
       </n-flex>
-
       <n-flex :size="30" vertical>
         <!-- 头像 -->
         <n-flex justify="center">
           <n-avatar
             round
             :size="110"
-            :color="'#fff'"
-            class="border-(2px solid #fff)"
-            :src="login.accountInfo.avatar || '/logo.png'" />
+            :color="themes.content === ThemeEnum.DARK ? '#282828' : '#fff'"
+            :fallback-src="themes.content === ThemeEnum.DARK ? '/logoL.png' : '/logoD.png'"
+            :src="AvatarUtils.getAvatarUrl(userStore.userInfo?.avatar ?? '')" />
         </n-flex>
 
         <n-flex justify="center">
-          <n-ellipsis style="max-width: 200px" class="text-18px">{{ login.accountInfo.name }}</n-ellipsis>
+          <n-ellipsis style="max-width: 200px" class="text-(18px [--chat-text-color])">
+            {{ userStore.userInfo?.name || '' }}
+          </n-ellipsis>
         </n-flex>
       </n-flex>
 
@@ -120,132 +136,395 @@
         <n-button
           :loading="loading"
           :disabled="loginDisabled"
-          class="w-200px mt-12px mb-40px"
-          @click="autoLogin"
-          color="#13987f">
-          {{ loginText }}
+          tertiary
+          style="color: #fff"
+          class="gradient-button w-200px mt-12px mb-40px"
+          @click="triggerAutoLogin">
+          <span>{{ loginText }}</span>
         </n-button>
       </n-flex>
     </n-flex>
 
+    <!-- 第三方登录 -->
+    <div v-if="uiState !== 'auto'" class="w-full pb-22px pt-3px">
+      <ThirdPartyLogin :login-context="loginContext" />
+    </div>
+
     <!-- 底部操作栏 -->
-    <n-flex justify="center" class="text-14px" id="bottomBar">
-      <div class="color-#13987f cursor-pointer" @click="router.push('/qrCode')">扫码登录</div>
-      <div class="w-1px h-14px bg-#ccc"></div>
-      <div v-if="isAutoLogin" class="color-#13987f cursor-pointer">移除账号</div>
-      <n-popover v-else trigger="click" :show-checkmark="false" :show-arrow="false">
-        <template #trigger>
-          <div class="color-#13987f cursor-pointer">更多选项</div>
-        </template>
-        <n-flex vertical :size="2">
-          <div class="text-14px cursor-pointer hover:bg-#f3f3f3 hover:rounded-6px p-8px">注册账号</div>
-          <div class="text-14px cursor-pointer hover:bg-#f3f3f3 hover:rounded-6px p-8px">忘记密码</div>
-        </n-flex>
-      </n-popover>
-    </n-flex>
+    <div
+      v-if="uiState === 'auto'"
+      class="text-14px grid grid-cols-[1fr_auto_1fr] items-center gap-x-12px w-full"
+      id="bottomBar">
+      <div
+        class="color-#13987f cursor-pointer justify-self-end text-right"
+        :title="cancelLoginTitle"
+        @click="cancelAutoLoginAndShowManual">
+        {{ cancelLoginLabel }}
+      </div>
+      <div class="w-1px h-14px bg-#ccc dark:bg-#707070 justify-self-center"></div>
+      <div
+        class="color-#13987f cursor-pointer justify-self-start text-left"
+        :title="removeAccountTitle"
+        @click="removeStoredAccount">
+        {{ removeAccountLabel }}
+      </div>
+    </div>
+    <div v-else class="text-14px grid grid-cols-[1fr_auto_1fr] items-center gap-x-12px w-full" id="bottomBar">
+      <div
+        class="color-#13987f cursor-pointer justify-self-end text-right"
+        :title="qrCodeTitle"
+        @click="router.push('/qrCode')">
+        {{ qrCodeLabel }}
+      </div>
+      <div class="w-1px h-14px bg-#ccc dark:bg-#707070 justify-self-center"></div>
+      <div class="justify-self-start text-left">
+        <n-popover
+          trigger="click"
+          id="moreShow"
+          class="bg-#fdfdfd98! dark:bg-#48484e98! backdrop-blur-sm"
+          v-model:show="moreShow"
+          :show-checkmark="false"
+          :show-arrow="false">
+          <template #trigger>
+            <div class="color-#13987f cursor-pointer" :title="moreTitle">{{ moreLabel }}</div>
+          </template>
+          <n-flex vertical :size="2">
+            <div
+              class="register text-14px cursor-pointer hover:bg-#90909030 hover:rounded-6px p-8px"
+              @click="createWebviewWindow('注册', 'register', 600, 600)">
+              {{ t('login.register') }}
+            </div>
+            <div
+              class="text-14px cursor-pointer hover:bg-#90909030 hover:rounded-6px p-8px"
+              @click="createWebviewWindow('忘记密码', 'forgetPassword', 600, 600)">
+              {{ t('login.option.items.forget') }}
+            </div>
+            <div
+              v-if="!isCompatibility()"
+              @click="router.push('/network')"
+              :class="{ network: isMac() }"
+              class="text-14px cursor-pointer hover:bg-#90909030 hover:rounded-6px p-8px">
+              {{ t('login.option.items.network_setting') }}
+            </div>
+          </n-flex>
+        </n-popover>
+      </div>
+    </div>
   </n-config-provider>
 </template>
 <script setup lang="ts">
-import router from '@/router'
-import { useWindow } from '@/hooks/useWindow.ts'
-import { delay } from 'lodash-es'
-import { lightTheme } from 'naive-ui'
-import { setting } from '@/stores/setting.ts'
+import { useI18n } from 'vue-i18n'
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { useNetwork } from '@vueuse/core'
+import { darkTheme, lightTheme } from 'naive-ui'
 import { storeToRefs } from 'pinia'
-import { useLogin } from '@/hooks/useLogin.ts'
+import { useCheckUpdate } from '@/hooks/useCheckUpdate'
+import { type DriverStepConfig, useDriver } from '@/hooks/useDriver'
+import { useMitt } from '@/hooks/useMitt'
+import { useWindow } from '@/hooks/useWindow.ts'
+import router from '@/router'
+import type { UserInfoType } from '@/services/types.ts'
+import { WsResponseMessageType } from '@/services/wsType'
+import { useGlobalStore } from '@/stores/global'
+import { useGuideStore } from '@/stores/guide'
+import { useLoginHistoriesStore } from '@/stores/loginHistory.ts'
+import { useSettingStore } from '@/stores/setting.ts'
+import { useUserStore } from '@/stores/user.ts'
+import { AvatarUtils } from '@/utils/AvatarUtils'
+import { isCompatibility, isDesktop, isMac } from '@/utils/PlatformConstants'
+import { clearListener } from '@/utils/ReadCountQueue'
+import { useLogin } from '@/hooks/useLogin'
+import { formatBottomText } from '@/utils/Formatting'
+import { ThemeEnum } from '@/enums'
+import ThirdPartyLogin, { type ThirdPartyLoginContext } from './ThirdPartyLogin.vue'
 
-const settingStore = setting()
+const { t } = useI18n()
+
+const settingStore = useSettingStore()
+const { themes } = storeToRefs(settingStore)
+const naiveTheme = computed(() => (themes.value.content === 'dark' ? darkTheme : lightTheme))
+const userStore = useUserStore()
+const globalStore = useGlobalStore()
+const guideStore = useGuideStore()
+const { isTrayMenuShow } = storeToRefs(globalStore)
+const { isGuideCompleted } = storeToRefs(guideStore)
+/** 网络连接是否正常 */
+const { isOnline } = useNetwork()
+const loginHistoriesStore = useLoginHistoriesStore()
+const { loginHistories } = loginHistoriesStore
 const { login } = storeToRefs(settingStore)
-/** 账号信息 */
-const info = ref({
-  account: '',
-  password: '',
-  avatar: '',
-  name: '',
-  uid: 0
-})
-/** 是否中断登录 */
-const interruptLogin = ref(false)
 /** 协议 */
-const protocol = ref()
-const loginDisabled = ref(false)
-const loading = ref(false)
+const protocol = ref(true)
 const arrowStatus = ref(false)
-const isAutoLogin = ref(false)
-const { setLoginState } = useLogin()
-/** todo 模拟账号列表 */
-const accountOption = ref<STO.Setting['login']['accountInfo'][]>([
+const moreShow = ref(false)
+const { createWebviewWindow, createModalWindow, getWindowPayload } = useWindow()
+const { checkUpdate, CHECK_UPDATE_LOGIN_TIME } = useCheckUpdate()
+const { normalLogin, giteeLogin, githubLogin, gitcodeLogin, loading, loginText, loginDisabled, info, uiState } =
+  useLogin()
+const loginContext: ThirdPartyLoginContext = {
+  giteeLogin,
+  githubLogin,
+  gitcodeLogin,
+  loading,
+  loginDisabled
+}
+const isDesktopClient = isDesktop()
+const AUTO_LOGIN_DELAY_MS = 3000
+const autoLoginPending = ref(false)
+let autoLoginTimer: number | null = null
+
+const clearAutoLoginTimer = () => {
+  if (autoLoginTimer !== null) {
+    window.clearTimeout(autoLoginTimer)
+    autoLoginTimer = null
+  }
+  autoLoginPending.value = false
+}
+
+const startAutoLoginCountdown = () => {
+  if (!isDesktopClient) {
+    normalLogin('PC', true, true)
+    return
+  }
+  clearAutoLoginTimer()
+  autoLoginPending.value = true
+  autoLoginTimer = window.setTimeout(() => {
+    autoLoginPending.value = false
+    autoLoginTimer = null
+    normalLogin('PC', true, true)
+  }, AUTO_LOGIN_DELAY_MS)
+}
+
+const cancelAutoLogin = () => {
+  if (!autoLoginPending.value) {
+    return
+  }
+  clearAutoLoginTimer()
+}
+
+const handleAutoLoginActivity = () => {
+  if (uiState.value !== 'auto' || !autoLoginPending.value) {
+    return
+  }
+  cancelAutoLogin()
+}
+
+const triggerAutoLogin = () => {
+  cancelAutoLogin()
+  normalLogin('PC', true, true)
+}
+
+const cancelAutoLoginAndShowManual = () => {
+  cancelAutoLogin()
+  uiState.value = 'manual'
+  loginHistories.length > 0 && giveAccount(loginHistories[0])
+}
+
+const driverSteps = computed<DriverStepConfig[]>(() => [
   {
-    account: 'hula',
-    password: '123456',
-    name: '超级GG帮',
-    avatar: 'https://picsum.photos/140?1',
-    uid: 123456,
-    token: 'test'
+    element: '.welcome',
+    popover: {
+      title: t('login.guide.welcome.title'),
+      description: t('login.guide.welcome.desc'),
+      side: 'bottom',
+      align: 'center'
+    }
   },
   {
-    account: 'hula1',
-    password: '123456',
-    name: '二狗子',
-    avatar: 'https://picsum.photos/140?2',
-    uid: 123456,
-    token: 'test'
+    element: '.agreement',
+    popover: {
+      title: t('login.guide.privacy.title'),
+      description: t('login.guide.privacy.desc'),
+      onNextClick: () => {
+        if (isMac()) {
+          moreShow.value = true
+        }
+      }
+    }
   },
   {
-    account: 'hula2',
-    password: '123456',
-    name: '李山离',
-    avatar: 'https://picsum.photos/140?3',
-    uid: 123456,
-    token: 'test'
+    element: '.network',
+    popover: {
+      title: t('login.guide.network.title'),
+      description: t('login.guide.network.desc'),
+      onNextClick: () => {
+        moreShow.value = true
+      }
+    }
   },
   {
-    account: 'hula3',
-    password: '123456',
-    name: '牛什么呢',
-    avatar: 'https://picsum.photos/140?4',
-    uid: 123456,
-    token: 'test'
+    element: '.register',
+    popover: {
+      title: t('login.guide.register.title'),
+      description: t('login.guide.register.desc')
+    }
   }
 ])
-const accountPH = ref('输入HuLa账号')
-const passwordPH = ref('输入HuLa密码')
-/** 登录按钮的文本内容 */
-const loginText = ref('登录')
-const { createWebviewWindow } = useWindow()
 
-watchEffect(() => {
-  loginDisabled.value = !(info.value.account && info.value.password && protocol.value)
-  // 清空账号的时候设置默认头像
-  if (!info.value.account) {
-    info.value.avatar = '/logo.png'
-  }
-  if (interruptLogin.value) {
-    loginDisabled.value = false
-  }
+const driverConfig = computed(() => ({
+  nextBtnText: t('login.guide.actions.next'),
+  prevBtnText: t('login.guide.actions.prev'),
+  doneBtnText: t('login.guide.actions.done'),
+  progressText: t('login.guide.actions.progress', {
+    current: '{{current}}',
+    total: '{{total}}'
+  })
+}))
+
+const { startTour, reinitialize } = useDriver(driverSteps.value, driverConfig.value)
+
+watch([driverSteps, driverConfig], ([steps, config]) => {
+  reinitialize(steps, config)
 })
 
+// 输入框占位符
+const accountPH = ref(t('login.input.account.placeholder'))
+const passwordPH = ref(t('login.input.pass.placeholder'))
+
+// 底部操作栏多语言超过6个字符时显示省略号
+const MAX_BOTTOM_TEXT_LEN = 6
+const qrCodeText = computed(() => t('login.button.qr_code'))
+const moreText = computed(() => t('login.option.more'))
+const removeAccountText = computed(() => t('login.button.remove_account'))
+const cancelLoginText = computed(() => t('login.button.cancel_login'))
+const qrCodeLabel = computed(() => formatBottomText(qrCodeText.value, MAX_BOTTOM_TEXT_LEN))
+const moreLabel = computed(() => formatBottomText(moreText.value, MAX_BOTTOM_TEXT_LEN))
+const removeAccountLabel = computed(() => formatBottomText(removeAccountText.value, MAX_BOTTOM_TEXT_LEN))
+const cancelLoginLabel = computed(() => formatBottomText(cancelLoginText.value, MAX_BOTTOM_TEXT_LEN))
+const qrCodeTitle = computed(() => (qrCodeLabel.value !== qrCodeText.value ? qrCodeText.value : undefined))
+const moreTitle = computed(() => (moreLabel.value !== moreText.value ? moreText.value : undefined))
+const removeAccountTitle = computed(() =>
+  removeAccountLabel.value !== removeAccountText.value ? removeAccountText.value : undefined
+)
+const cancelLoginTitle = computed(() =>
+  cancelLoginLabel.value !== cancelLoginText.value ? cancelLoginText.value : undefined
+)
+
+/** 是否直接跳转 */
+const isJumpDirectly = ref(false)
+
+// 导入Web Worker
+const timerWorker = new Worker(new URL('../../workers/timer.worker.ts', import.meta.url))
+
+// 添加错误处理
+timerWorker.onerror = (error) => {
+  console.error('[Worker Error]', error)
+}
+
+// 监听 Worker 消息
+timerWorker.onmessage = (e) => {
+  const { type } = e.data
+  if (type === 'timeout') {
+    checkUpdate('login')
+  }
+}
+
+watchEffect(() => {
+  if (uiState.value === 'auto') {
+    loginDisabled.value = !isOnline.value || !userStore.userInfo?.account
+    return
+  }
+  loginDisabled.value = !(info.value.account && info.value.password && protocol.value && isOnline.value)
+})
+
+watch(
+  () => uiState.value,
+  (state) => {
+    if (state !== 'auto') {
+      clearAutoLoginTimer()
+    }
+  }
+)
+
+watch(
+  () => login.value.autoLogin,
+  (isAuto) => {
+    if (!isAuto) {
+      clearAutoLoginTimer()
+    }
+  }
+)
+
+watch(isOnline, (v) => {
+  loginDisabled.value = !v
+  loginText.value = v ? t('login.button.login.default') : t('login.button.login.network_error')
+})
+
+// 监听账号输入
+watch(
+  () => info.value.account,
+  (newAccount) => {
+    if (!newAccount) {
+      info.value.avatar = '/logoD.png'
+      return
+    }
+
+    // 在登录历史中查找匹配的账号
+    const matchedAccount = loginHistories.find(
+      (history) => history.account === newAccount || history.email === newAccount
+    )
+    if (matchedAccount) {
+      info.value.avatar = matchedAccount.avatar
+    } else {
+      info.value.avatar = '/logoD.png'
+    }
+  }
+)
+
+const openRemoteLoginModal = async (ip?: string) => {
+  if (!isDesktop()) {
+    return
+  }
+  const payloadIp = ip ?? '未知IP'
+  await createModalWindow(
+    '异地登录提醒',
+    'modal-remoteLogin',
+    350,
+    310,
+    'login',
+    {
+      ip: payloadIp
+    },
+    {
+      minWidth: 350,
+      minHeight: 310
+    }
+  )
+}
+
+const handlePendingRemoteLoginPayload = async () => {
+  if (!isDesktop()) {
+    return
+  }
+  try {
+    const payload = await getWindowPayload<{ remoteLogin?: { ip?: string } }>('login')
+    if (payload?.remoteLogin) {
+      openRemoteLoginModal(payload.remoteLogin.ip)
+    }
+  } catch (error) {
+    console.error('处理异地登录载荷失败:', error)
+  }
+}
+
 /** 删除账号列表内容 */
-const delAccount = (index: number) => {
-  // 检查索引有效性
-  if (index < 0 || index >= accountOption.value.length) return
+const delAccount = (item: UserInfoType) => {
   // 获取删除前账户列表的长度
-  const lengthBeforeDelete = accountOption.value.length
-  accountOption.value.splice(index, 1)
+  const lengthBeforeDelete = loginHistories.length
+  loginHistoriesStore.removeLoginHistory(item)
   // 判断是否删除了最后一个条目，并据此更新arrowStatus
-  if (lengthBeforeDelete === 1 && accountOption.value.length === 0) {
+  if (lengthBeforeDelete === 1 && loginHistories.length === 0) {
     arrowStatus.value = false
   }
   info.value.account = ''
   info.value.password = ''
-  info.value.avatar = '/logo.png'
+  info.value.avatar = '/logoD.png'
 }
 
 /**
  * 给账号赋值
  * @param item 账户信息
  * */
-const giveAccount = (item: STO.Setting['login']['accountInfo']) => {
+const giveAccount = (item: UserInfoType) => {
   const { account, password, avatar, name, uid } = item
   info.value.account = account || ''
   info.value.password = password || ''
@@ -255,38 +534,32 @@ const giveAccount = (item: STO.Setting['login']['accountInfo']) => {
   arrowStatus.value = false
 }
 
-/**登录后创建主页窗口*/
-const loginWin = () => {
-  if (interruptLogin.value) return
-  loading.value = true
-  delay(async () => {
-    await createWebviewWindow('HuLa', 'home', 960, 720, 'login', true)
-    loading.value = false
-    if (!login.value.autoLogin || login.value.accountInfo.password === '') {
-      settingStore.setAccountInfo({
-        account: info.value.account,
-        password: info.value.password,
-        avatar: info.value.avatar,
-        name: info.value.name,
-        uid: info.value.uid,
-        token: 'test'
-      })
-      await setLoginState()
+/** 移除已登录账号 */
+const removeStoredAccount = () => {
+  const storedUserInfo = userStore.userInfo
+  if (storedUserInfo) {
+    const matchedHistory = loginHistories.find(
+      (item) => item.uid === storedUserInfo.uid || item.account === storedUserInfo.account
+    )
+    if (matchedHistory) {
+      loginHistoriesStore.removeLoginHistory(matchedHistory)
     }
-  }, 1000)
+  }
+  localStorage.removeItem('TOKEN')
+  localStorage.removeItem('REFRESH_TOKEN')
+  userStore.userInfo = undefined
+  settingStore.setAutoLogin(false)
+  cancelAutoLoginAndShowManual()
 }
 
-/** 自动登录 */
-const autoLogin = () => {
-  interruptLogin.value = false
-  isAutoLogin.value = true
-  // TODO 检查用户网络是否连接 (nyh -> 2024-03-16 12:06:59)
-  loginText.value = '网络连接中'
-  delay(async () => {
-    loginWin()
-    loginText.value = '登录'
-    await setLoginState()
-  }, 1000)
+/** 打开服务协议窗口 */
+const openServiceAgreement = async () => {
+  await createModalWindow('服务协议', 'modal-serviceAgreement', 600, 600, 'login')
+}
+
+/** 打开隐私保护协议窗口 */
+const openPrivacyAgreement = async () => {
+  await createModalWindow('隐私保护指引', 'modal-privacyAgreement', 600, 600, 'login')
 }
 
 const closeMenu = (event: MouseEvent) => {
@@ -294,24 +567,92 @@ const closeMenu = (event: MouseEvent) => {
   if (!target.matches('.account-box, .account-box *, .down')) {
     arrowStatus.value = false
   }
-  if (target.matches('#bottomBar *') && isAutoLogin.value) {
-    interruptLogin.value = true
+  if (!target.matches('#moreShow')) {
+    moreShow.value = false
   }
 }
 
-onMounted(async () => {
-  if (login.value.autoLogin && login.value.accountInfo.password !== '') {
-    autoLogin()
+const enterKey = (e: KeyboardEvent) => {
+  if (e.key === 'Enter' && !loginDisabled.value) {
+    normalLogin('PC', true, false)
   }
+}
+
+onBeforeMount(async () => {
+  // 登录页初始化时清空当前会话，避免重启后默认选中旧会话
+  globalStore.updateCurrentSessionRoomId('')
+  await handlePendingRemoteLoginPayload()
+  // 始终初始化托盘菜单状态为false
+  isTrayMenuShow.value = false
+
+  if (!login.value.autoLogin) {
+    // 非自动登录模式，直接显示手动登录界面
+    uiState.value = 'manual'
+    localStorage.removeItem('TOKEN')
+    localStorage.removeItem('REFRESH_TOKEN')
+    clearListener()
+    return
+  }
+})
+
+onMounted(async () => {
+  // 检查引导状态，只有未完成时才启动引导
+  if (!isGuideCompleted.value) {
+    startTour()
+  }
+
+  // 只有在需要登录的情况下才显示登录窗口
+  if (!isJumpDirectly.value) {
+    await getCurrentWebviewWindow().show()
+  }
+
+  useMitt.on(WsResponseMessageType.NO_INTERNET, () => {
+    loginDisabled.value = true
+    loginText.value = t('login.status.service_disconnected')
+  })
+
+  // 自动登录时显示自动登录界面并触发登录
+  if (login.value.autoLogin) {
+    uiState.value = 'auto'
+    startAutoLoginCountdown()
+  } else {
+    // 手动登录模式，自动填充第一个历史账号
+    uiState.value = 'manual'
+    loginHistories.length > 0 && giveAccount(loginHistories[0])
+  }
+
   window.addEventListener('click', closeMenu, true)
+  window.addEventListener('keyup', enterKey)
+  if (isDesktopClient) {
+    window.addEventListener('pointerdown', handleAutoLoginActivity, true)
+    window.addEventListener('keydown', handleAutoLoginActivity, true)
+  }
+  await checkUpdate('login', true)
+  timerWorker.postMessage({
+    type: 'startTimer',
+    msgId: 'checkUpdate',
+    duration: CHECK_UPDATE_LOGIN_TIME
+  })
 })
 
 onUnmounted(() => {
   window.removeEventListener('click', closeMenu, true)
+  window.removeEventListener('keyup', enterKey)
+  if (isDesktopClient) {
+    window.removeEventListener('pointerdown', handleAutoLoginActivity, true)
+    window.removeEventListener('keydown', handleAutoLoginActivity, true)
+  }
+  clearAutoLoginTimer()
+  // 清除Web Worker计时器
+  timerWorker.postMessage({
+    type: 'clearTimer',
+    msgId: 'checkUpdate'
+  })
+  timerWorker.terminate()
 })
 </script>
 
 <style scoped lang="scss">
-@import '@/styles/scss/global/login-bg';
-@import '@/styles/scss/login';
+@use '@/styles/scss/global/login-bg';
+@use '@/styles/scss/login';
 </style>
